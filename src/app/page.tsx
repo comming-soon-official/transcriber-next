@@ -1,112 +1,216 @@
-import Image from "next/image";
+"use client";
+import * as React from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { useState } from "react";
+import { ENV } from "../../config.env";
+import { S3Client } from "@aws-sdk/client-s3";
+import axios from "axios";
+import { Loader2 } from "lucide-react";
+
+import TempPage from "./temp";
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner"),
+  { GetObjectCommand, PutObjectCommand, S3 } = require("@aws-sdk/client-s3");
+
+type StatusType = {
+  progress: number;
+  isFileUploading: boolean;
+  isFileDownloading: boolean;
+  isChangedFile: boolean;
+};
 export default function Home() {
+  const [files, setFiles] = useState<File | undefined>();
+  const [key, setKey] = useState<string>("");
+  const [status, setStatus] = useState<StatusType>({
+    progress: 0,
+    isFileUploading: false,
+    isFileDownloading: false,
+    isChangedFile: false,
+  });
+  const { AWS_REGION, AWS_S3_BUCKET, AWS_ACCESS_KEY, AWS_SECRET_ACCESS_KEY } =
+    ENV;
+  const s3Client = new S3Client({
+    credentials: {
+      accessKeyId: AWS_ACCESS_KEY,
+      secretAccessKey: AWS_SECRET_ACCESS_KEY,
+    },
+    apiVersion: "4",
+    region: AWS_REGION,
+  });
+
+  const handleFileUpload = async () => {
+    setStatus((prev) => {
+      const tempvar = { ...prev };
+      tempvar.isFileUploading = true;
+      return tempvar;
+    });
+    try {
+      const fileExtention = files?.name.split(".").pop();
+      const uuidKey = `Transcribes/Original_File/${self.crypto.randomUUID()}.${fileExtention}`;
+      setKey(uuidKey);
+
+      const params = {
+        Bucket: AWS_S3_BUCKET,
+        Key: uuidKey,
+      };
+      const command = new PutObjectCommand(params);
+      const UploadUrl = await getSignedUrl(s3Client, command, {
+        expiresIn: 3600,
+      });
+      await axios.put(UploadUrl, files, {
+        headers: {
+          "Content-Type": "video/*",
+        },
+
+        onUploadProgress: (progressEvent: any) => {
+          const totalBytes = progressEvent.total;
+          const uploadedSoFar = progressEvent.loaded;
+          const percentage = (uploadedSoFar / totalBytes) * 100;
+          setStatus({ ...status, progress: Math.round(percentage) });
+        },
+      });
+    } catch (e) {
+      console.error("error", e);
+    }
+    setStatus((prev) => {
+      const tempvar = { ...prev };
+      tempvar.isFileUploading = false;
+      return tempvar;
+    });
+  };
+  const handleDownloadFile = async () => {
+    setStatus((prev) => {
+      const tempvar = { ...prev };
+      tempvar.isFileDownloading = true;
+      return tempvar;
+    });
+
+    try {
+      const params = {
+        Bucket: AWS_S3_BUCKET,
+        Key: key,
+      };
+      const command = new GetObjectCommand(params);
+      const UploadUrl = await getSignedUrl(s3Client, command, {
+        expiresIn: 3600,
+      });
+      window.open(UploadUrl, "_blank");
+    } catch (e) {
+      console.error("Error", e);
+    }
+    setStatus((prev) => {
+      const tempvar = { ...prev };
+      tempvar.isFileDownloading = false;
+      return tempvar;
+    });
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+    <main className="flex min-h-screen flex-col items-center justify-between p-32 font-mono">
+      <div>
+        <Card className="w-[350px]">
+          <CardHeader>
+            <CardTitle>Transcribe App</CardTitle>
+            <CardDescription>
+              Deploy your new project in one-click.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form>
+              <div className="grid w-full items-center gap-4">
+                <div className="flex flex-col space-y-1.5">
+                  <Label htmlFor="name">Pick Your File</Label>
+                  <Input
+                    onChange={(event) => {
+                      setStatus((prev) => {
+                        const tempvar = { ...prev };
+                        tempvar.isChangedFile = true;
+                        return tempvar;
+                      });
+                      setFiles(event.target.files?.[0]);
+                    }}
+                    type="file"
+                    accept="video/*"
+                  />
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
+                  {status.progress > 0 && (
+                    <div className="w-full flex justify-center items-center">
+                      <Progress className="mr-2" value={status.progress} />{" "}
+                      <span>{`${status.progress}%`}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col space-y-1.5">
+                  <Label htmlFor="framework">Select launguage</Label>
+                  <Select>
+                    <SelectTrigger id="framework">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent position="popper">
+                      <SelectItem value="english">English</SelectItem>
+                      <SelectItem value="french">French</SelectItem>
+                      <SelectItem value="german">German</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </form>
+          </CardContent>
+          <CardFooter className="flex-col justify-end">
+            <div className="mb-4">
+              {status.isChangedFile === true && status.progress === 100 ? (
+                <Button
+                  variant={"outline"}
+                  onClick={handleDownloadFile}
+                  disabled={status.isFileDownloading}
+                >
+                  {status.isFileDownloading ? (
+                    <div className="flex items-center">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Please Wait
+                    </div>
+                  ) : (
+                    <>Download</>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleFileUpload}
+                  disabled={status.isFileUploading || status.progress > 0}
+                >
+                  {" "}
+                  {status.isFileUploading || status.progress > 0 ? (
+                    <div className="flex items-center">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Please Wait
+                    </div>
+                  ) : (
+                    <>Upload</>
+                  )}
+                </Button>
+              )}
+            </div>
+          </CardFooter>
+        </Card>
+        {/* <TempPage /> */}
       </div>
     </main>
   );
